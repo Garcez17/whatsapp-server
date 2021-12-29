@@ -13,7 +13,7 @@ class GetUnreadMessagesFromChat {
     }).exec();
 
     const lastMessage = messages.slice(-1)[0];
-    const unreadMessages = messages.length;
+    const unreadMessages = messages.filter(message => !message.read).length;
 
     return {
       lastMessage,

@@ -13,6 +13,8 @@ import { GetUserBySocketIdService } from "../services/GetUserBySocketIdService";
 import { GetChatRoomByUsersService } from "../services/GetChatRoomByUsersService";
 import { GetMessagesByChatRoomService } from "../services/GetMessagesByChatRoomService";
 import { GetUnreadMessagesFromChat } from "../services/GetUnreadMessagesFromChat";
+import { UpdateReadMessageService } from "../services/UpdateReadMessageService";
+import { GetUserByMongoIdService } from "../services/getUserByMongoIdService";
 
 io.on('connect', socket => {
   socket.on('online', async (email, callback) => {
@@ -36,6 +38,8 @@ io.on('connect', socket => {
     const toogleUserOnlineService = container.resolve(ToogleUserOnlineService);
 
     const user = await getUserBySocketIdService.execute(socket.id);
+
+    if (!user) return;
 
     const dataUsr = {
       email: user!.email,
@@ -84,6 +88,8 @@ io.on('connect', socket => {
     const getChatRoomByUsersService = container.resolve(GetChatRoomByUsersService);
     const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
     const getMessagesByChatRoomService = container.resolve(GetMessagesByChatRoomService);
+    const updateReadMessageService = container.resolve(UpdateReadMessageService);
+    const getUserByMongoIdService = container.resolve(GetUserByMongoIdService);
 
     const userLogged = await getUserBySocketIdService.execute(socket.id);
 
@@ -97,11 +103,23 @@ io.on('connect', socket => {
 
     const messages = await getMessagesByChatRoomService.execute(room.idChatRoom);
 
+    if (messages.some(msg => msg.read === false)) {
+      const updatedMessages = await updateReadMessageService.execute({
+        messages,
+        user_logged_id: userLogged!._id,
+      })
+
+      const userFrom = await getUserByMongoIdService.execute(data.idUser);
+
+      io.to(userFrom!.socket_id).emit('updated_messages', {
+        updatedMessages,
+      })
+    }
+
     callback({ roomId: room.idChatRoom, messages });
   });
 
   socket.on('message', async (data) => {
-    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
     const getUnreadMessagesFromChat = container.resolve(GetUnreadMessagesFromChat);
     const createMessageService = container.resolve(CreateMessageService);
     const getChatRoomByIdService = container.resolve(GetChatRoomByIdService);
@@ -131,7 +149,7 @@ io.on('connect', socket => {
 
     io.to(userFrom!.socket_id).emit('notification', {
       lastMessage,
-      roomId: data.roomId,
+      room,
       from: userLogged,
       unreadMessages,
     })

@@ -27,11 +27,7 @@ export class GetAllUsersService {
       }
     });
 
-    console.log(rooms);
-
     const contactsIds = rooms.map(room => room.idUsers.find(contact_id => contact_id.toString() !== user._id.toString()));
-
-    console.log(contactsIds);
 
     const contacts = await User.find({
       _id: {
@@ -46,15 +42,13 @@ export class GetAllUsersService {
         }).exec();
 
         const lastMessage = messages.slice(-1)[0];
-        const unreadMessages = messages.filter(msg => msg.to.toString() === contact._id.toString()).length;
+        const unreadMessages = messages.filter(msg => ((msg.to.toString() === contact._id.toString()) && !msg.read)).length;
 
         return { contact, lastMessage, unreadMessages };
       })
 
       return Promise.all(promise);
     }
-
-    const test = await response();
 
     return response();
   }
