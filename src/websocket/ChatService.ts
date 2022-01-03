@@ -113,6 +113,7 @@ io.on('connect', socket => {
 
       io.to(userFrom!.socket_id).emit('updated_messages', {
         updatedMessages,
+        contact: userLogged,
       })
     }
 
