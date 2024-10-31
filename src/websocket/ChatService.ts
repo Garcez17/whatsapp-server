@@ -93,10 +93,12 @@ io.on('connect', socket => {
 
     const userLogged = await getUserBySocketIdService.execute(socket.id);
 
-    let room = await getChatRoomByUsersService.execute([data.idUser, userLogged!._id]);
+    if (!userLogged?._id) return null
+
+    let room = await getChatRoomByUsersService.execute([data.idUser, userLogged._id]);
 
     if (!room) {
-      room = await createChatRoomService.execute([data.idUser, userLogged!._id]);
+      room = await createChatRoomService.execute([data.idUser, userLogged._id]);
     }
 
     socket.join(room.idChatRoom);
@@ -119,6 +121,38 @@ io.on('connect', socket => {
 
     callback({ roomId: room.idChatRoom, messages });
   });
+
+  socket.on('read_messages', (async (data, callback) => {
+    const getChatRoomByUsersService = container.resolve(GetChatRoomByUsersService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+    const getMessagesByChatRoomService = container.resolve(GetMessagesByChatRoomService);
+    const updateReadMessageService = container.resolve(UpdateReadMessageService);
+    const getUserByMongoIdService = container.resolve(GetUserByMongoIdService);
+
+    const userLogged = await getUserBySocketIdService.execute(socket.id);
+
+    let room = await getChatRoomByUsersService.execute([data.idUser, userLogged!._id]);
+
+    const messages = await getMessagesByChatRoomService.execute(room!.idChatRoom);
+
+    if (messages.some(msg => msg.read === false)) {
+      const updatedMessages = await updateReadMessageService.execute({
+        messages,
+        user_logged_id: userLogged!._id,
+      })
+
+      const userFrom = await getUserByMongoIdService.execute(data.idUser);
+
+      if (updatedMessages.length > 0) {
+        io.to([userFrom!.socket_id, userLogged!.socket_id]).emit('updated_messages', {
+          updatedMessages,
+          contact: userLogged,
+        })
+      }
+    }
+
+    callback({ roomId: room!.idChatRoom, messages });
+  }))
 
   socket.on('message', async (data) => {
     const getUnreadMessagesFromChat = container.resolve(GetUnreadMessagesFromChat);
