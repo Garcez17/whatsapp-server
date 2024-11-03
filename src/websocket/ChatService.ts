@@ -15,6 +15,8 @@ import { GetMessagesByChatRoomService } from "../services/GetMessagesByChatRoomS
 import { GetUnreadMessagesFromChat } from "../services/GetUnreadMessagesFromChat";
 import { UpdateReadMessageService } from "../services/UpdateReadMessageService";
 import { GetUserByMongoIdService } from "../services/getUserByMongoIdService";
+import { GetUsersSocketIdService } from "../services/GetUsersSocketIdService";
+import { GetAllGroupsService } from "../services/GetAllGroupsService";
 
 io.on('connect', socket => {
   socket.on('online', async (email, callback) => {
@@ -67,6 +69,13 @@ io.on('connect', socket => {
     socket.broadcast.emit('new_users', user);
   });
 
+  socket.on('get_groups', async (data, callback) => {
+    const getAllGroupsService = container.resolve(GetAllGroupsService);
+
+    const groups = await getAllGroupsService.execute({ user_id: data });
+
+    callback(groups);
+  });
   socket.on('get_users', async (data, callback) => {
     const getAllUsersService = container.resolve(GetAllUsersService);
 
@@ -83,6 +92,49 @@ io.on('connect', socket => {
     callback(user?.is_online || false);
   });
 
+  socket.on('create_group', async (data, callback) => {
+    const createChatRoomService = container.resolve(CreateChatRoomService);
+    const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+
+    const userLogged = await getUserBySocketIdService.execute(socket.id);
+
+    if (!userLogged?._id) return null
+
+    const users = [...data.idUsers, userLogged._id]
+    const room = await createChatRoomService.execute({
+      idUsers: users,
+      idAdmin: userLogged._id,
+      idleTime: Number(data.idleTime),
+      isPrivate: false,
+      name: data.name,
+      userLimit: Number(data.userLimit),
+    });
+
+    socket.join(room.idChatRoom);
+
+    const userSocketIds = await getUsersSocketIdService.execute(users)
+
+    io.to(userSocketIds).emit('new_group', {
+      room,
+    })
+  })
+
+  socket.on('open_group', async (data, callback) => {
+    const getChatRoomByIdService = container.resolve(GetChatRoomByIdService);
+    const getMessagesByChatRoomService = container.resolve(GetMessagesByChatRoomService);
+
+    const room = await getChatRoomByIdService.execute(data.roomId);
+
+    if (!room) return null
+
+    socket.join(room.idChatRoom);
+
+    const messages = await getMessagesByChatRoomService.execute(room.idChatRoom);
+
+    callback({ messages })
+  })
+
   socket.on('start_chat', async (data, callback) => {
     const createChatRoomService = container.resolve(CreateChatRoomService);
     const getChatRoomByUsersService = container.resolve(GetChatRoomByUsersService);
@@ -98,7 +150,9 @@ io.on('connect', socket => {
     let room = await getChatRoomByUsersService.execute([data.idUser, userLogged._id]);
 
     if (!room) {
-      room = await createChatRoomService.execute([data.idUser, userLogged._id]);
+      room = await createChatRoomService.execute({
+        idUsers: [data.idUser, userLogged._id],
+      });
     }
 
     socket.join(room.idChatRoom);
@@ -182,7 +236,9 @@ io.on('connect', socket => {
       user_id: userLogged?._id,
     });
 
-    io.to(userFrom!.socket_id).emit('notification', {
+    const userSocketIds = room?.idUsers.map(user => user.socket_id) ?? [];
+
+    io.to(room?.isPrivate ? userFrom!.socket_id : userSocketIds).emit('notification', {
       lastMessage,
       room,
       from: userLogged,

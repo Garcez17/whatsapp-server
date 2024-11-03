@@ -4,14 +4,13 @@ import { v4 as uuid } from 'uuid';
 
 type ChatRoom = Document & {
   idChatRoom: string;
-  idMembers: string[];    // (aka idUsers) - deal with this prop whenever a given participant leaves or joins the chatroom
+  idUsers: User[];    // (aka idUsers) - deal with this prop whenever a given participant leaves or joins the chatroom
   idAdmin: User;         //  similar behaviour as stated above
   idBanned: User[];
   idUsersJoinedAt: Map<string, Date>;
   idUsersLastMessage: Map<string, Date>;
   name?: string;
   isPrivate: boolean;
-  description?: string;
   createdAt: Date;
   messagesCount: number;
   userLimit: number;
@@ -19,13 +18,12 @@ type ChatRoom = Document & {
 }
 
 const ChatRoomSchema = new Schema({
-
   idChatRoom: {
     type: String,
     default: uuid,
   },
 
-  idMembers: [
+  idUsers: [
     {
       type: Schema.Types.ObjectId,
       ref: 'Users',
@@ -33,8 +31,8 @@ const ChatRoomSchema = new Schema({
   ],
 
   idAdmin: {
-      type: Schema.Types.ObjectId,
-      ref: 'Users',
+    type: Schema.Types.ObjectId,
+    ref: 'Users',
   },
 
   idBanned: [
@@ -64,16 +62,11 @@ const ChatRoomSchema = new Schema({
     default: true,
   },
 
-  description: {
-    type: String,
-    default: '',
-  },
-
   createdAt: {
     type: Date,
     default: Date.now(),
   },
-  
+
   messagesCount: {
     type: Number,
     default: 0,
