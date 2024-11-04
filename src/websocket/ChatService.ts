@@ -1,5 +1,5 @@
 import { container } from "tsyringe";
-
+import { differenceInSeconds } from 'date-fns'
 import { io } from "../http";
 
 import { CreateUserService } from "../services/CreateUserService";
@@ -17,6 +17,33 @@ import { UpdateReadMessageService } from "../services/UpdateReadMessageService";
 import { GetUserByMongoIdService } from "../services/getUserByMongoIdService";
 import { GetUsersSocketIdService } from "../services/GetUsersSocketIdService";
 import { GetAllGroupsService } from "../services/GetAllGroupsService";
+import { GetGroupsService } from "../services/GetGroupsService";
+
+setInterval(() => {
+  async function verifyUsers() {
+    const getGroupsService = container.resolve(GetGroupsService);
+
+    const groups = await getGroupsService.execute();
+
+    groups.forEach(group => {
+      group.idUsersLastMessage.forEach((value, key) => {
+        const difference = differenceInSeconds(new Date(), value)
+
+        console.log('DIFFERENCE IN SECONDS ==>', difference)
+
+        if (group.idleTime < difference) {
+          io.emit('kick_user', {
+            roomId: group?.idChatRoom,
+            userId: key,
+            adminId: group?.idAdmin,
+          })
+        }
+      })
+    })
+  }
+
+  verifyUsers()
+}, 3000)
 
 io.on('connect', socket => {
   socket.on('online', async (email, callback) => {
@@ -76,6 +103,15 @@ io.on('connect', socket => {
 
     callback(groups);
   });
+
+  socket.on('get_all_groups', async (callback) => {
+    const getGroupsService = container.resolve(GetGroupsService);
+
+    const groups = await getGroupsService.execute();
+
+    callback(groups);
+  });
+
   socket.on('get_users', async (data, callback) => {
     const getAllUsersService = container.resolve(GetAllUsersService);
 
