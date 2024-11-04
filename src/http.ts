@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import path from 'path';
+import path, { join } from 'path';
 import mongoose from 'mongoose';
 import cors from 'cors';
 

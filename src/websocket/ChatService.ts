@@ -17,6 +17,10 @@ import { UpdateReadMessageService } from "../services/UpdateReadMessageService";
 import { GetUserByMongoIdService } from "../services/getUserByMongoIdService";
 import { GetUsersSocketIdService } from "../services/GetUsersSocketIdService";
 import { GetAllGroupsService } from "../services/GetAllGroupsService";
+import { BanUserFromChatService } from "../services/BanUserFromChatService";
+import { KickUserFromChatService } from "../services/KickUserFromChatService";
+import { UnbanUserFromChatService } from "../services/UnbanUserFromChatService";
+import { JoinChatRoomService } from "../services/JoinChatRoomService";
 import { GetGroupsService } from "../services/GetGroupsService";
 
 setInterval(() => {
@@ -280,5 +284,172 @@ io.on('connect', socket => {
       from: userLogged,
       unreadMessages,
     })
+  });
+
+  socket.on('ban_user', async (data, callback) => {
+    const banUserFromChatService = container.resolve(BanUserFromChatService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+    const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
+
+    try {
+      const adminUser = await getUserBySocketIdService.execute(socket.id);
+      
+      if (!adminUser?._id) 
+        return null;
+
+      const updatedRoom = await banUserFromChatService.execute({
+        roomId: data.roomId,
+        userId: data.userId,
+        adminId: adminUser._id,
+      });
+
+      // Getting socket IDs of all users in the room in order to notify them
+      const userSocketIds = await getUsersSocketIdService.execute(
+        updatedRoom!.idUsers.map(user => String(user._id))
+      );
+
+      // (OPTIONAL)
+      // Sending notification to the banned user
+      //io.to(data.userSocketId).emit('user_banned', {
+      //  roomId: data.roomId,
+      //  message: 'You have been banned from this chat room'
+      //});
+
+      // Removiing banned user from the room
+      io.sockets.sockets.get(data.userSocketId)?.leave(data.roomId);
+
+      // Notifying other users in the room
+      io.to(userSocketIds).emit('user_banned_notification', {
+        roomId: data.roomId,
+        bannedUserId: data.userId,
+        room: updatedRoom
+      });
+
+      callback({ success: true, room: updatedRoom });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+  });
+
+  socket.on('kick_user', async (data, callback) => {
+    const kickUserFromChatService = container.resolve(KickUserFromChatService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+    const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
+
+    try {
+      const adminUser = await getUserBySocketIdService.execute(socket.id);
+      
+      if (!adminUser?._id) 
+        return null;
+
+      const updatedRoom = await kickUserFromChatService.execute({
+        roomId: data.roomId,
+        userId: data.userId,
+        adminId: adminUser._id,
+      });
+
+      // Getting socket IDs of all users in the room in order to notify them
+      const userSocketIds = await getUsersSocketIdService.execute(
+        updatedRoom!.idUsers.map(user => String(user._id))
+      );
+
+      // (OPTIONAL)
+      // Notify the kicked user
+      //io.to(data.userSocketId).emit('user_kicked', {
+      //  roomId: data.roomId,
+      //  message: 'You have been kicked from this chat room'
+      //});
+
+      // Remove kicked user from the room
+      io.sockets.sockets.get(data.userSocketId)?.leave(data.roomId);
+
+      // Notify other users in the room
+      io.to(userSocketIds).emit('user_kicked_notification', {
+        roomId: data.roomId,
+        kickedUserId: data.userId,
+        room: updatedRoom
+      });
+
+      callback({ success: true, room: updatedRoom });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+  });
+
+  socket.on('unban_user', async (data, callback) => {
+    const unbanUserFromChatService = container.resolve(UnbanUserFromChatService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+
+    try {
+      const adminUser = await getUserBySocketIdService.execute(socket.id);
+      
+      if (!adminUser?._id) 
+        return null;
+
+      const updatedRoom = await unbanUserFromChatService.execute({
+        roomId: data.roomId,
+        userId: data.userId,
+        adminId: adminUser._id,
+      });
+
+      // Notifyingg the unbanned user if they're online
+      io.to(data.userSocketId).emit('user_unbanned', {
+        roomId: data.roomId,
+        message: 'You have been unbanned from this chat room'
+      });
+
+      callback({ success: true, room: updatedRoom });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+  });
+
+  socket.on('join_room', async (data, callback) => {
+    const joinChatRoomService = container.resolve(JoinChatRoomService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+    const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
+
+    try {
+      const user = await getUserBySocketIdService.execute(socket.id);
+      
+      if (!user?._id) {
+        callback({ 
+          success: false, 
+          error: 'Could not find user' 
+        });
+        return;
+      }
+
+      const updatedRoom = await joinChatRoomService.execute({
+        roomId: data.roomId,
+        userId: user._id,
+      });
+
+      // Includig socket to room
+      socket.join(data.roomId);
+
+      // Getting all room users' socket IDs to notify them
+      const userSocketIds = await getUsersSocketIdService.execute(
+        updatedRoom!.idUsers.map(user => String(user._id))
+      );
+
+      // Notifying the other users in the room about the new user
+      socket.to(userSocketIds).emit('user_joined', {
+        roomId: data.roomId,
+        user: user,
+        room: updatedRoom
+      });
+
+      callback({ 
+        success: true, 
+        room: updatedRoom 
+      });
+
+    } catch (error) {
+      callback({ 
+        success: false, 
+        error: error.message 
+      });
+    }
   });
 });
