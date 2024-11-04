@@ -25,25 +25,26 @@ import { GetGroupsService } from "../services/GetGroupsService";
 
 setInterval(() => {
   async function verifyUsers() {
-    const getGroupsService = container.resolve(GetGroupsService);
+    // const getGroupsService = container.resolve(GetGroupsService);
 
-    const groups = await getGroupsService.execute();
+    // const groups = await getGroupsService.execute();
 
-    groups.forEach(group => {
-      group.idUsersLastMessage.forEach((value, key) => {
-        const difference = differenceInSeconds(new Date(), value)
+    // groups.forEach(group => {
+    //   group.idUsersLastMessage.forEach((value, key) => {
+    //     const difference = differenceInSeconds(new Date(), value)
 
-        console.log('DIFFERENCE IN SECONDS ==>', difference)
+    //     console.log('DIFFERENCE IN SECONDS ==>', difference)
 
-        if (group.idleTime < difference) {
-          io.emit('kick_user', {
-            roomId: group?.idChatRoom,
-            userId: key,
-            adminId: group?.idAdmin,
-          })
-        }
-      })
-    })
+    //     if (group.idleTime < difference) {
+    //       console.log('kick user')
+    //       // io.emit('kick_user', {
+    //       //   roomId: group?.idChatRoom,
+    //       //   userId: key,
+    //       //   adminId: group?.idAdmin,
+    //       // })
+    //     }
+    //   })
+    // })
   }
 
   verifyUsers()
@@ -288,19 +289,13 @@ io.on('connect', socket => {
 
   socket.on('ban_user', async (data, callback) => {
     const banUserFromChatService = container.resolve(BanUserFromChatService);
-    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
     const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
 
     try {
-      const adminUser = await getUserBySocketIdService.execute(socket.id);
-      
-      if (!adminUser?._id) 
-        return null;
-
       const updatedRoom = await banUserFromChatService.execute({
         roomId: data.roomId,
         userId: data.userId,
-        adminId: adminUser._id,
+        adminId: data.adminId,
       });
 
       // Getting socket IDs of all users in the room in order to notify them
@@ -327,25 +322,23 @@ io.on('connect', socket => {
 
       callback({ success: true, room: updatedRoom });
     } catch (error) {
-      callback({ success: false, error: error.message });
+      // callback({ success: false, error: error.message });
     }
   });
 
   socket.on('kick_user', async (data, callback) => {
     const kickUserFromChatService = container.resolve(KickUserFromChatService);
-    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
     const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+    const getUserByMongoIdService = container.resolve(GetUserByMongoIdService);
 
     try {
-      const adminUser = await getUserBySocketIdService.execute(socket.id);
-      
-      if (!adminUser?._id) 
-        return null;
+      const userLogged = await getUserBySocketIdService.execute(socket.id);
 
       const updatedRoom = await kickUserFromChatService.execute({
         roomId: data.roomId,
         userId: data.userId,
-        adminId: adminUser._id,
+        adminId: data.adminId,
       });
 
       // Getting socket IDs of all users in the room in order to notify them
@@ -361,18 +354,20 @@ io.on('connect', socket => {
       //});
 
       // Remove kicked user from the room
-      io.sockets.sockets.get(data.userSocketId)?.leave(data.roomId);
-
+      io.sockets.sockets.get(data.userSocketId)?.disconnect(data.roomId);
+      const kickedUser = await getUserByMongoIdService.execute(data.userId)
       // Notify other users in the room
-      io.to(userSocketIds).emit('user_kicked_notification', {
+      io.to([...userSocketIds, data.userSockedId]).emit('user_kicked_notification', {
         roomId: data.roomId,
-        kickedUserId: data.userId,
-        room: updatedRoom
+        kickedUser,
+        room: updatedRoom,
+        userLoggedId: userLogged?._id,
+        exit: data.exit,
       });
 
       callback({ success: true, room: updatedRoom });
     } catch (error) {
-      callback({ success: false, error: error.message });
+      // callback({ success: false, error: error.message });
     }
   });
 
@@ -382,8 +377,8 @@ io.on('connect', socket => {
 
     try {
       const adminUser = await getUserBySocketIdService.execute(socket.id);
-      
-      if (!adminUser?._id) 
+
+      if (!adminUser?._id)
         return null;
 
       const updatedRoom = await unbanUserFromChatService.execute({
@@ -400,29 +395,17 @@ io.on('connect', socket => {
 
       callback({ success: true, room: updatedRoom });
     } catch (error) {
-      callback({ success: false, error: error.message });
+      // callback({ success: false, error: error.message });
     }
   });
 
   socket.on('join_room', async (data, callback) => {
     const joinChatRoomService = container.resolve(JoinChatRoomService);
-    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
     const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
-
     try {
-      const user = await getUserBySocketIdService.execute(socket.id);
-      
-      if (!user?._id) {
-        callback({ 
-          success: false, 
-          error: 'Could not find user' 
-        });
-        return;
-      }
-
-      const updatedRoom = await joinChatRoomService.execute({
-        roomId: data.roomId,
-        userId: user._id,
+      const { updatedRoom, lastMessage } = await joinChatRoomService.execute({
+        roomId: data.idChatRoom,
+        userId: data.userId,
       });
 
       // Includig socket to room
@@ -436,20 +419,21 @@ io.on('connect', socket => {
       // Notifying the other users in the room about the new user
       socket.to(userSocketIds).emit('user_joined', {
         roomId: data.roomId,
-        user: user,
+        userId: data.userId,
+        room: updatedRoom,
+        lastMessage,
+      });
+
+      callback({
+        success: true,
         room: updatedRoom
       });
 
-      callback({ 
-        success: true, 
-        room: updatedRoom 
-      });
-
     } catch (error) {
-      callback({ 
-        success: false, 
-        error: error.message 
-      });
+      // callback({
+      //   success: false,
+      //   error: error.message
+      // });
     }
   });
 });

@@ -1,57 +1,59 @@
 import { injectable } from "tsyringe";
 import { ChatRoom } from "../schemas/ChatRoom";
 import { User } from "../schemas/User";
+import { Message } from "../schemas/Message";
 
 @injectable()
 export class JoinChatRoomService {
-  public async execute({ 
-    roomId, 
-    userId 
-  }: { 
-    roomId: string; 
+  public async execute({
+    roomId,
+    userId
+  }: {
+    roomId: string;
     userId: string;
   }) {
-    
+
     const room = await ChatRoom.findOne({ idChatRoom: roomId })
       .populate('idUsers')
       .populate('idBanned')
       .populate('idAdmin');
 
-    if (!room) 
+    if (!room)
       throw new Error('Chat room not found');
-    
+
 
     // Check if user is banned
     const isUserBanned = room.idBanned.some(
       bannedUser => String(bannedUser._id) === String(userId)
     );
 
-    if (isUserBanned) 
+    if (isUserBanned)
       throw new Error('You are banned from this chat room');
-    
+
 
     // Checking whether the user is already in the room or not
     const isUserInRoom = room.idUsers.some(
       user => String(user._id) === String(userId)
     );
 
-    if (isUserInRoom) 
+    if (isUserInRoom)
       throw new Error('You are already in this chat room');
-    
+
 
     // Checking if room has reached user limit
-    if (room.idUsers.length >= room.userLimit) 
+
+    if (room.idUsers.length >= room.userLimit)
       throw new Error('Chat room has reached its user limit');
-    
+
 
     // Getting current date for joined at timestamp
     const currentDate = new Date();
 
     // Adding user to room and update timestamps
-    const updatedRoom = await ChatRoom.findOneAndUpdate(
+    await ChatRoom.findOneAndUpdate(
       { idChatRoom: roomId },
       {
-        $push: { idUsers: userId },
+        $push: { idUsers: [userId] },
         $set: { [`idUsersJoinedAt.${userId}`]: currentDate }
       },
       { new: true }
@@ -59,6 +61,14 @@ export class JoinChatRoomService {
      .populate('idAdmin')
      .populate('idBanned');
 
-    return updatedRoom;
+    const updatedRoom = await ChatRoom.findOne({ idChatRoom: roomId }).populate('idUsers')
+
+    const messages = await Message.find({
+      roomId: updatedRoom!.idChatRoom,
+    }).exec();
+
+    const lastMessage = messages.slice(-1)[0];
+
+    return { updatedRoom, lastMessage };
   }
 }

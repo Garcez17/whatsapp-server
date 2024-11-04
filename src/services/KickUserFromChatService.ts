@@ -3,24 +3,22 @@ import { ChatRoom } from "../schemas/ChatRoom";
 
 @injectable()
 export class KickUserFromChatService {
-  public async execute({ 
-    roomId, 
-    userId, 
-    adminId 
-  }: { 
-    roomId: string; 
-    userId: string; 
+  public async execute({
+    roomId,
+    userId,
+    adminId
+  }: {
+    roomId: string;
+    userId: string;
     adminId: string;
   }) {
     const room = await ChatRoom.findOne({ idChatRoom: roomId })
-      .populate('idAdmin')
-      .populate('idUsers');
 
     if (!room)
       throw new Error('Chat room not found');
 
     // Verifying whether the requester is the admin or not
-    if (String(room.idAdmin._id) !== String(adminId)) 
+    if (String(room.idAdmin._id) !== String(adminId))
       throw new Error('Only admin can kick users');
 
     // Removing user from room
@@ -29,11 +27,10 @@ export class KickUserFromChatService {
       {
         $pull: { idUsers: userId }
       }
-    );
+    ).populate('idUsers').exec();
 
-    const updatedRoom = await ChatRoom.findOne({ idChatRoom: roomId })
-      .populate('idAdmin')
-      .populate('idUsers');
+    const updatedRoom = await ChatRoom.findOne({ idChatRoom: roomId }).populate('idUsers')
+
 
     return updatedRoom;
   }
