@@ -17,7 +17,7 @@ interface IResponse {
 }
 
 @injectable()
-export class GetAllUsersService {
+export class GetAllGroupsService {
   public async execute({ user_id }: IRequest) {
     const user = await User.findOne({ _id: user_id }) as User;
 
@@ -25,28 +25,19 @@ export class GetAllUsersService {
       idUsers: {
         $in: [user]
       },
-    });
-
-    console.log('rooms: ', rooms)
-
-    const contactsIds = rooms.map(room => room.idUsers.find(contact_id => contact_id.toString() !== user._id.toString()));
-
-    const contacts = await User.find({
-      _id: {
-        $in: contactsIds
-      }
-    }).exec();
+      isPrivate: false
+    }).populate('idUsers');
 
     const response = () => {
-      const promise = contacts.map(async (contact, index) => {
+      const promise = rooms.map(async (group) => {
         const messages = await Message.find({
-          roomId: rooms[index].idChatRoom,
+          roomId: group.idChatRoom,
         }).exec();
 
         const lastMessage = messages.slice(-1)[0];
-        const unreadMessages = messages.filter(msg => ((msg.to.toString() === contact._id.toString()) && !msg.read)).length;
+        const unreadMessages = messages.filter(msg => msg.read).length;
 
-        return { contact, lastMessage, unreadMessages };
+        return { group, lastMessage, unreadMessages };
       })
 
       return Promise.all(promise);

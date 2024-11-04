@@ -45,7 +45,9 @@ class UpdateReadMessageService {
       return Promise.all(promise);
     }
 
-    return response();
+    const readMessages = await response()
+
+    return readMessages;
   }
 }
 
