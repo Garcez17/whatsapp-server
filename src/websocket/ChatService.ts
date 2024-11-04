@@ -20,6 +20,7 @@ import { GetAllGroupsService } from "../services/GetAllGroupsService";
 import { BanUserFromChatService } from "../services/BanUserFromChatService";
 import { KickUserFromChatService } from "../services/KickUserFromChatService";
 import { UnbanUserFromChatService } from "../services/UnbanUserFromChatService";
+import { JoinChatRoomService } from "../services/JoinChatRoomService";
 
 io.on('connect', socket => {
   socket.on('online', async (email, callback) => {
@@ -364,6 +365,55 @@ io.on('connect', socket => {
       callback({ success: true, room: updatedRoom });
     } catch (error) {
       callback({ success: false, error: error.message });
+    }
+  });
+
+  socket.on('join_room', async (data, callback) => {
+    const joinChatRoomService = container.resolve(JoinChatRoomService);
+    const getUserBySocketIdService = container.resolve(GetUserBySocketIdService);
+    const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
+
+    try {
+      const user = await getUserBySocketIdService.execute(socket.id);
+      
+      if (!user?._id) {
+        callback({ 
+          success: false, 
+          error: 'Could not find user' 
+        });
+        return;
+      }
+
+      const updatedRoom = await joinChatRoomService.execute({
+        roomId: data.roomId,
+        userId: user._id,
+      });
+
+      // Includig socket to room
+      socket.join(data.roomId);
+
+      // Getting all room users' socket IDs to notify them
+      const userSocketIds = await getUsersSocketIdService.execute(
+        updatedRoom!.idUsers.map(user => String(user._id))
+      );
+
+      // Notifying the other users in the room about the new user
+      socket.to(userSocketIds).emit('user_joined', {
+        roomId: data.roomId,
+        user: user,
+        room: updatedRoom
+      });
+
+      callback({ 
+        success: true, 
+        room: updatedRoom 
+      });
+
+    } catch (error) {
+      callback({ 
+        success: false, 
+        error: error.message 
+      });
     }
   });
 });
