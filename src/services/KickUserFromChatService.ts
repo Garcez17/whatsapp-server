@@ -56,10 +56,8 @@ export class KickUserFromChatService {
       },
       { new: true }
     );
-
-    const updatedRoom = await ChatRoom.findOne({ idChatRoom: roomId })
-      .populate('idAdmin')
-      .populate('idUsers');
+  
+    const updatedRoom = await ChatRoom.findOne({ idChatRoom: roomId }).populate('idUsers')
 
     return updatedRoom;
   }
