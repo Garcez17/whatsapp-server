@@ -10,7 +10,7 @@ const app = express();
 
 const server = createServer(app);
 
-mongoose.connect('mongodb://localhost/wppggz');
+mongoose.connect('mongodb+srv://wpp:wpp@cluster0.bj2d4.mongodb.net/wpp');
 
 // app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(cors());
@@ -18,7 +18,7 @@ app.use(express.json());
 
 const io = new Server(server, {
   cors: {
-    origin: "https://rps-master.vercel.app/",
+    origin: "http://localhost:3000",
     methods: ["GET", "POST"],
     credentials: true
   }
