@@ -52,6 +52,10 @@ export class KickUserFromChatService {
     await ChatRoom.findOneAndUpdate(
       { idChatRoom: roomId },
       {
+        $unset: {
+          [`idUsersLastMessage.${userId}`]: "",
+          [`idUsersJoinedAt.${userId}`]: "",
+        },
         $pull: { idUsers: userId }
       }
     ).populate('idUsers').exec();

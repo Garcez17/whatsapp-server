@@ -25,26 +25,22 @@ import { GetGroupsService } from "../services/GetGroupsService";
 
 setInterval(() => {
   async function verifyUsers() {
-    // const getGroupsService = container.resolve(GetGroupsService);
+    const getGroupsService = container.resolve(GetGroupsService);
+    const groups = await getGroupsService.execute();
 
-    // const groups = await getGroupsService.execute();
+    groups.forEach(group => {
+      group.idUsersLastMessage.forEach(async (value, key) => {
+        const difference = differenceInSeconds(new Date(), value)
 
-    // groups.forEach(group => {
-    //   group.idUsersLastMessage.forEach((value, key) => {
-    //     const difference = differenceInSeconds(new Date(), value)
-
-    //     console.log('DIFFERENCE IN SECONDS ==>', difference)
-
-    //     if (group.idleTime < difference) {
-    //       console.log('kick user')
-    //       // io.emit('kick_user', {
-    //       //   roomId: group?.idChatRoom,
-    //       //   userId: key,
-    //       //   adminId: group?.idAdmin,
-    //       // })
-    //     }
-    //   })
-    // })
+        if (group.idleTime < difference) {
+          io.emit('idle_check', {
+            roomId: group?.idChatRoom,
+            userId: key,
+            adminId: group?.idAdmin,
+          })
+        }
+      })
+    })
   }
 
   verifyUsers()
@@ -109,10 +105,10 @@ io.on('connect', socket => {
     callback(groups);
   });
 
-  socket.on('get_all_groups', async (callback) => {
+  socket.on('get_all_groups', async (data, callback) => {
     const getGroupsService = container.resolve(GetGroupsService);
 
-    const groups = await getGroupsService.execute();
+    const groups = await getGroupsService.execute(data.user_id);
 
     callback(groups);
   });
@@ -290,6 +286,7 @@ io.on('connect', socket => {
   socket.on('ban_user', async (data, callback) => {
     const banUserFromChatService = container.resolve(BanUserFromChatService);
     const getUsersSocketIdService = container.resolve(GetUsersSocketIdService);
+    const getUserByMongoIdService = container.resolve(GetUserByMongoIdService);
 
     try {
       const updatedRoom = await banUserFromChatService.execute({
@@ -302,6 +299,7 @@ io.on('connect', socket => {
       const userSocketIds = await getUsersSocketIdService.execute(
         updatedRoom!.idUsers.map(user => String(user._id))
       );
+      const bannedUser = await getUserByMongoIdService.execute(data.userId)
 
       // (OPTIONAL)
       // Sending notification to the banned user
@@ -316,9 +314,14 @@ io.on('connect', socket => {
       // Notifying other users in the room
       io.to(userSocketIds).emit('user_banned_notification', {
         roomId: data.roomId,
+        bannedUser,
         bannedUserId: data.userId,
         room: updatedRoom
       });
+
+      io.to(bannedUser!.socket_id).emit('kicked_notification', {
+        roomId: data.roomId,
+      })
 
       callback({ success: true, room: updatedRoom });
     } catch (error) {
@@ -357,7 +360,7 @@ io.on('connect', socket => {
       io.sockets.sockets.get(data.userSocketId)?.disconnect(data.roomId);
       const kickedUser = await getUserByMongoIdService.execute(data.userId)
       // Notify other users in the room
-      io.to([...userSocketIds, data.userSockedId]).emit('user_kicked_notification', {
+      io.to(userSocketIds).emit('user_kicked_notification', {
         roomId: data.roomId,
         kickedUser,
         room: updatedRoom,
@@ -365,7 +368,21 @@ io.on('connect', socket => {
         exit: data.exit,
       });
 
-      callback({ success: true, room: updatedRoom });
+      io.to(kickedUser!.socket_id).emit('kicked_notification', {
+        roomId: data.roomId,
+        exit: data.exit,
+      })
+
+      callback(data.exit ? {
+        roomId: data.roomId,
+        exit: data.exit,
+      } : {
+        roomId: data.roomId,
+        kickedUser,
+        room: updatedRoom,
+        userLoggedId: userLogged?._id,
+        exit: data.exit,
+      });
     } catch (error) {
       // callback({ success: false, error: error.message });
     }
@@ -425,8 +442,10 @@ io.on('connect', socket => {
       });
 
       callback({
-        success: true,
-        room: updatedRoom
+        roomId: data.roomId,
+        userId: data.userId,
+        room: updatedRoom,
+        lastMessage,
       });
 
     } catch (error) {
